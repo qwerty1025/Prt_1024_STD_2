@@ -1,0 +1,1285 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>五寮尖山羊乳 - 全域點陣高速列印工作台 v9.1</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Firebase v8 相容庫 -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", sans-serif;
+      -webkit-tap-highlight-color: transparent;
+      background-color: #0f172a;
+      color: #f1f5f9;
+      padding-bottom: 84px;
+    }
+    .hide-scrollbar::-webkit-scrollbar { display: none; }
+    .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    canvas {
+      image-rendering: pixelated;
+      background: #ffffff;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+    }
+  </style>
+</head>
+<body class="selection:bg-amber-500 selection:text-white">
+
+  <!-- ==================== 頂部狀態列 ==================== -->
+  <header class="bg-slate-800/95 backdrop-blur border-b border-slate-700 p-3 sticky top-0 z-50 flex justify-between items-center shadow-md">
+    <div class="flex flex-col">
+      <h1 class="text-base font-bold text-white tracking-wider flex items-center gap-1.5">
+        <span>五寮尖山羊乳 列印工作台</span>
+        <span class="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-1.5 py-0.5 rounded">v9.1 點陣版</span>
+      </h1>
+      <span class="text-[11px] text-slate-400">
+        目前分頁: <span id="currentTabLabel" class="text-amber-400 font-bold">作業與列表</span> | 引擎: GS v 0 
+      </span>
+    </div>
+    <div id="connStatus" class="flex items-center gap-2">
+      <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30">
+        尚未連線
+      </span>
+    </div>
+  </header>
+
+  <main class="p-4 max-w-2xl mx-auto space-y-4">
+    
+    <!-- ==================== 分頁一：作業與列表 ==================== -->
+    <section id="tab-1" class="space-y-4 block">
+      
+      <!-- 1. 雲端試算表匯入 GOTx -->
+      <div class="bg-slate-800 rounded-2xl p-4 shadow-lg border border-slate-700">
+        <h2 class="text-sm font-semibold text-emerald-400 mb-2 flex items-center justify-between">
+          <span>📥 串連試算表 (匯入 GOTx)</span>
+          <span class="text-[11px] text-slate-400 font-normal">自動同步站點與訂單</span>
+        </h2>
+        <div class="flex gap-2">
+          <input type="text" id="sheetUrl" value="https://docs.google.com/spreadsheets/d/1GwHutB8D7KeuN5QuehL8Dt_Ed3G6rYzOzBIGCeWG8pc/edit?usp=sharing" class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-slate-300 text-xs outline-none focus:border-emerald-500">
+          <button onclick="fetchGoogleSheetGOTx()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-white font-bold text-xs active:scale-95 transition-all shadow-md whitespace-nowrap">
+            匯入資料
+          </button>
+        </div>
+      </div>
+
+      <!-- 2. 手動單筆登記 -->
+      <div class="bg-slate-800 rounded-2xl p-4 shadow-lg border border-slate-700">
+        <h2 class="text-sm font-semibold text-amber-400 mb-3 border-b border-slate-700 pb-2 flex justify-between items-center">
+          <span>✍️ 手動登入外送/預購單</span>
+          <span class="text-[10px] text-slate-400 font-normal">同步 Firebase _xptre & hsty_hd</span>
+        </h2>
+
+        <!-- 取貨站點選擇與動態新增 -->
+        <div class="mb-4">
+          <div class="flex justify-between items-center mb-1.5">
+            <label class="text-xs text-slate-300 font-semibold">1. 選擇或新增配送站點</label>
+            <div class="flex gap-1.5">
+              <input type="text" id="newStationInput" placeholder="輸入新站點名稱..." class="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-white text-xs outline-none focus:border-amber-500 w-36">
+              <button onclick="addCustomStation()" class="px-2.5 py-1 bg-slate-700 hover:bg-amber-600 text-white rounded-lg text-xs font-bold transition-colors">
+                + 新增站點
+              </button>
+            </div>
+          </div>
+          <div id="manualLocContainer" class="flex overflow-x-auto gap-2 pb-1.5 hide-scrollbar">
+            <!-- 由 JS 動態渲染站點膠囊 -->
+          </div>
+        </div>
+
+        <!-- 客戶姓名與出貨日期 -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+          <div>
+            <div class="flex justify-between items-end mb-1">
+              <label class="block text-xs text-slate-300 font-semibold">2. 客戶姓名</label>
+              <button type="button" onclick="document.getElementById('quickNames').classList.toggle('hidden')" class="text-[10px] text-amber-400 border border-amber-400/50 rounded px-1.5 py-0.5 hover:bg-amber-400/10">展開常用姓名</button>
+            </div>
+            <!-- 常用姓名快速輸入面板 -->
+            <div id="quickNames" class="hidden flex flex-wrap gap-1.5 mb-2 bg-slate-900 p-2 rounded-lg border border-slate-700">
+              <span onclick="setManualName('現場零售')" class="cursor-pointer text-xs bg-slate-700 px-2 py-1 rounded text-white hover:bg-amber-600">現場零售</span>
+              <span onclick="setManualName('散客')" class="cursor-pointer text-xs bg-slate-700 px-2 py-1 rounded text-white hover:bg-amber-600">散客</span>
+              <span onclick="setManualName('試飲客')" class="cursor-pointer text-xs bg-slate-700 px-2 py-1 rounded text-white hover:bg-amber-600">試飲客</span>
+              <span onclick="setManualName('農會客人')" class="cursor-pointer text-xs bg-slate-700 px-2 py-1 rounded text-white hover:bg-amber-600">農會客人</span>
+            </div>
+            <input type="text" id="manualName" placeholder="例如: 王大明 或 選擇常用姓名" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-xs outline-none focus:border-amber-500">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-300 font-semibold mb-1">配送/取貨日期</label>
+            <input type="date" id="manualDate" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-xs outline-none focus:border-amber-500">
+          </div>
+        </div>
+
+        <!-- 特殊備註 Pill Button Group -->
+        <div class="mb-4 bg-slate-900/70 p-3 rounded-xl border border-slate-700/80">
+          <div class="flex justify-between items-center mb-2">
+            <label class="text-xs text-slate-300 font-semibold">3. 特殊備註 (快速帶入或自訂，列印自動加【】)</label>
+            <span class="text-[10px] text-amber-400">選「空白」則不印出第4行</span>
+          </div>
+          <!-- Pill Button Group -->
+          <div class="inline-flex flex-wrap gap-1.5 p-1 bg-slate-950 rounded-full border border-slate-800 mb-2.5 w-full sm:w-auto">
+            <button type="button" onclick="selectNotePill('', this)" class="note-pill px-3 py-1 rounded-full text-xs font-bold transition-all bg-amber-600 text-white shadow">
+              空白 (無備註)
+            </button>
+            <button type="button" onclick="selectNotePill('阿順通知', this)" class="note-pill px-3 py-1 rounded-full text-xs font-bold transition-all text-slate-400 hover:text-white">
+              阿順通知
+            </button>
+            <button type="button" onclick="selectNotePill('記事本團購', this)" class="note-pill px-3 py-1 rounded-full text-xs font-bold transition-all text-slate-400 hover:text-white">
+              記事本團購
+            </button>
+            <button type="button" onclick="selectNotePill('每週預購', this)" class="note-pill px-3 py-1 rounded-full text-xs font-bold transition-all text-slate-400 hover:text-white">
+              每週預購
+            </button>
+          </div>
+          <input type="text" id="manualNote" placeholder="可點選上方膠囊快速帶入，或直接手動輸入備註..." oninput="syncNotePillState()" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-xs outline-none focus:border-amber-500">
+        </div>
+
+        <!-- 大瓶與中瓶數量 -->
+        <div class="grid grid-cols-2 gap-4 mb-4">
+          <div class="bg-slate-900 border border-slate-700 rounded-xl p-2.5 flex flex-col items-center">
+            <span class="text-xs text-slate-400 mb-1.5 font-semibold">大瓶數量</span>
+            <div class="flex items-center gap-4">
+              <button onclick="changeQty('large', -1)" class="w-8 h-8 rounded-full bg-slate-700 hover:bg-slate-600 text-white font-bold flex items-center justify-center active:scale-90">-</button>
+              <span id="qtyLarge" class="text-xl font-bold text-white w-6 text-center">0</span>
+              <button onclick="changeQty('large', 1)" class="w-8 h-8 rounded-full bg-amber-600 hover:bg-amber-500 text-white font-bold flex items-center justify-center active:scale-90">+</button>
+            </div>
+          </div>
+          <div class="bg-slate-900 border border-slate-700 rounded-xl p-2.5 flex flex-col items-center">
+            <span class="text-xs text-slate-400 mb-1.5 font-semibold">中瓶數量</span>
+            <div class="flex items-center gap-4">
+              <button onclick="changeQty('medium', -1)" class="w-8 h-8 rounded-full bg-slate-700 hover:bg-slate-600 text-white font-bold flex items-center justify-center active:scale-90">-</button>
+              <span id="qtyMedium" class="text-xl font-bold text-white w-6 text-center">0</span>
+              <button onclick="changeQty('medium', 1)" class="w-8 h-8 rounded-full bg-amber-600 hover:bg-amber-500 text-white font-bold flex items-center justify-center active:scale-90">+</button>
+            </div>
+          </div>
+        </div>
+
+        <button onclick="addManualOrder()" class="w-full py-3 bg-amber-600 hover:bg-amber-500 rounded-xl text-white font-bold text-xs flex justify-center items-center gap-1.5 shadow-lg active:scale-98">
+          ＋ 加入待印清單並同步雲端
+        </button>
+      </div>
+
+      <!-- 3. 智慧待印清單与站點總計 -->
+      <div class="bg-slate-800 rounded-2xl p-4 shadow-lg border border-slate-700">
+        <div class="flex justify-between items-center mb-3 border-b border-slate-700 pb-2">
+          <h2 class="text-sm font-semibold text-white">📋 智慧待印清單 (依站點分組)</h2>
+          <button onclick="clearQueue()" class="text-xs text-rose-400 py-1 px-2.5 bg-rose-500/10 hover:bg-rose-500/20 rounded-lg font-semibold">清空全部</button>
+        </div>
+        
+        <div id="queueListGrouped" class="space-y-4">
+          <div class="text-center text-slate-500 text-xs py-8">尚無資料，請從上方匯入 GOTx 或手動新增</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== 分頁二：字體設定、預覽與空白試驗對照表 ==================== -->
+    <section id="tab-2" class="space-y-4 hidden">
+      
+      <!-- 全域點陣渲染控制 (字體與黑白閾值) -->
+      <div class="bg-slate-800 rounded-2xl p-4 shadow-lg border border-slate-700 space-y-3">
+        <h2 class="text-sm font-semibold text-sky-400 border-b border-slate-700 pb-2">
+          🎛️ 全域 1-Bit 點陣渲染設定 (預覽即實印，0 轉譯偏差)
+        </h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+          <div class="bg-slate-900 p-3 rounded-xl border border-slate-700">
+            <label class="block text-slate-300 font-semibold mb-1.5">列印字體風格</label>
+            <select id="globalFontFamily" onchange="renderAllPreviews()" class="w-full bg-slate-800 border border-slate-600 text-white rounded-lg p-2 outline-none">
+              <option value='"Microsoft JhengHei", "PingFang TC", "Noto Sans TC", sans-serif' selected>現代黑體 (微軟正黑 / 蘋方 - 精臣質感推薦)</option>
+              <option value='"PMingLiU", "MingLiU", "TW-Sung", serif'>傳統明體 / 宋體 (復古收據感)</option>
+            </select>
+          </div>
+          <div class="bg-slate-900 p-3 rounded-xl border border-slate-700">
+            <div class="flex justify-between mb-1">
+              <span class="text-slate-300 font-semibold">筆畫粗細 / 二值化閾值</span>
+              <span id="thLabel" class="text-sky-400 font-bold">185</span>
+            </div>
+            <input type="range" id="globalThreshold" min="130" max="230" value="185" oninput="document.getElementById('thLabel').innerText=this.value; renderAllPreviews();" class="w-full accent-sky-500">
+            <span class="text-[10px] text-slate-400">調高 = 筆畫越粗黑飽滿；調低 = 筆畫較細</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- A. [商品便貼] 像素級尺寸設定與預覽 -->
+      <div class="bg-slate-800 rounded-2xl p-4 shadow-lg border border-slate-700 space-y-3">
+        <div class="flex justify-between items-center border-b border-slate-700 pb-2">
+          <h2 class="text-sm font-semibold text-amber-400">🏷️ [商品便貼] 真實像素字級設定</h2>
+          <button onclick="testPrintCurrentCanvas('previewCanvasSticker', '測試商品便貼')" class="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-bold shadow">
+            🖨️ 試印此預覽
+          </button>
+        </div>
+        <!-- (商品便貼各行控制與預覽同前，省略繁瑣介面，保留Canvas與必要元件) -->
+        <div class="hidden">
+           <select id="sPx1"><option value="24" selected></option></select><input type="checkbox" id="sBold1" checked>
+           <select id="sPx2"><option value="52" selected></option></select><input type="checkbox" id="sBold2" checked>
+           <select id="sPx3"><option value="34" selected></option></select><input type="checkbox" id="sBold3" checked>
+           <select id="sPx4"><option value="26" selected></option></select><input type="checkbox" id="sBold4" checked>
+        </div>
+        <div class="bg-slate-900/90 rounded-xl p-3 border border-slate-700 flex flex-col items-center overflow-x-auto">
+          <canvas id="previewCanvasSticker" width="384" height="220"></canvas>
+        </div>
+      </div>
+
+      <!-- B. [站點預購簽收單] -->
+      <div class="bg-slate-800 rounded-2xl p-4 shadow-lg border border-slate-700 space-y-3">
+        <div class="flex justify-between items-center border-b border-slate-700 pb-2">
+          <h2 class="text-sm font-semibold text-emerald-400">🧾 [站點預購出貨單] 座標與字級設定</h2>
+          <button onclick="testPrintCurrentCanvas('previewCanvasReceipt', '測試簽收單樣張')" class="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow">
+            🖨️ 試印此預覽
+          </button>
+        </div>
+        <!-- 隱藏部分控制項，保持整潔 -->
+        <div class="hidden">
+           <select id="rPxTitle"><option value="26" selected></option></select><input type="checkbox" id="rBoldTitle" checked>
+           <select id="rPxTotal"><option value="54" selected></option></select>
+           <select id="rPxItem"><option value="24" selected></option></select>
+        </div>
+        <div class="bg-slate-900 p-2.5 rounded-xl border border-slate-700">
+          <div class="flex justify-between items-center mb-1">
+            <span class="text-slate-300 text-xs">「規格欄」X軸起點座標</span>
+            <span id="lblSpecX" class="text-emerald-400 text-xs font-bold">155 px</span>
+          </div>
+          <input type="range" id="rSpecX" min="110" max="240" value="155" oninput="document.getElementById('lblSpecX').innerText=this.value+' px'; renderAllPreviews();" class="w-full accent-emerald-500">
+        </div>
+        <div class="bg-slate-900/90 rounded-xl p-3 border border-slate-700 flex flex-col items-center overflow-x-auto">
+          <canvas id="previewCanvasReceipt" width="384" height="420"></canvas>
+        </div>
+      </div>
+
+      <!-- D. [臨時出貨單] 手寫空白表格預覽 -->
+      <div class="bg-slate-800 rounded-2xl p-4 shadow-lg border border-slate-700 space-y-3">
+        <div class="flex justify-between items-center border-b border-slate-700 pb-2">
+          <h2 class="text-sm font-semibold text-sky-400">📝 [臨時出貨單] 現場手寫表格預覽</h2>
+          <button onclick="testPrintCurrentCanvas('previewCanvasTempReceipt', '測試臨時出貨單')" class="px-3 py-1 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-bold shadow">
+            🖨️ 試印此預覽
+          </button>
+        </div>
+        <div class="bg-slate-900 p-2.5 rounded-xl border border-slate-700">
+           <div class="flex justify-between items-center mb-1">
+             <span class="text-slate-300 text-xs">預設手寫空格高度</span>
+             <span id="lblTempRowH" class="text-sky-400 text-xs font-bold">60 px</span>
+           </div>
+           <input type="range" id="tempRowH" min="40" max="100" value="60" oninput="document.getElementById('lblTempRowH').innerText=this.value+' px'; renderAllPreviews();" class="w-full accent-sky-500">
+        </div>
+        <div class="bg-slate-900/90 rounded-xl p-3 border border-slate-700 flex flex-col items-center overflow-x-auto">
+          <canvas id="previewCanvasTempReceipt" width="384" height="420"></canvas>
+        </div>
+      </div>
+
+      <!-- C. [空白試驗] 對照表 -->
+      <div class="bg-slate-800 rounded-2xl p-4 shadow-lg border border-amber-500/40 space-y-3">
+        <div class="flex justify-between items-center border-b border-slate-700 pb-2">
+          <h2 class="text-sm font-semibold text-amber-300">📏 [空白試驗] 字體與實體比例尺對照表</h2>
+          <button onclick="testPrintCurrentCanvas('previewCanvasCalibration', '空白試驗-字體與比例尺對照表')" class="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-extrabold shadow-lg shrink-0">
+            🖨️ 列印對照表
+          </button>
+        </div>
+        <div class="bg-slate-900/90 rounded-xl p-3 border border-slate-700 flex flex-col items-center overflow-x-auto">
+          <canvas id="previewCanvasCalibration" width="384" height="580"></canvas>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ==================== 分頁三：藍牙/USB 通訊與極速參數 ==================== -->
+    <section id="tab-3" class="space-y-4 hidden">
+      <div class="bg-slate-800 border border-slate-700 rounded-2xl p-4 shadow-lg flex flex-col gap-3">
+        <h2 class="text-sm font-semibold text-white border-b border-slate-700 pb-2">
+          🖨️ 機台連線與高速傳輸設定
+        </h2>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-1">
+          <button onclick="connectPrinter('Quick')" class="py-3.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-bold text-white shadow-md active:scale-95">🔹 快速配對</button>
+          <button onclick="connectPrinter('All')" class="py-3.5 bg-sky-600 hover:bg-sky-500 rounded-xl text-xs font-bold text-white shadow-md active:scale-95">🔍 搜尋全部</button>
+          <button onclick="connectUSB()" class="py-3.5 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-xs font-bold text-white shadow-md active:scale-95">🔌 電腦 USB</button>
+        </div>
+        <button onclick="disconnectPrinter()" class="w-full py-2 bg-slate-700/50 hover:bg-slate-700 border border-slate-600 rounded-xl text-xs text-rose-300">中斷目前連線</button>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-700 rounded-2xl p-4 shadow-lg flex flex-col h-72">
+        <div class="flex justify-between items-center mb-2 border-b border-slate-700 pb-2">
+          <h2 class="text-xs font-semibold text-slate-300">機台通訊紀錄 (Console Log)</h2>
+          <span id="txProgressText" class="text-xs font-bold text-amber-400">待機中</span>
+        </div>
+        <div id="logConsole" class="flex-1 overflow-y-auto text-[11px] font-mono space-y-1 text-slate-400"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ==================== 底部固定切換導覽列 ==================== -->
+  <nav class="fixed bottom-0 w-full bg-slate-800/95 backdrop-blur border-t border-slate-700 pb-safe pt-2 px-2 flex justify-around items-center z-50 h-[70px]">
+    <button onclick="switchTab(1, '作業與列表')" id="navBtn1" class="flex flex-col items-center p-2 text-amber-500 w-1/3">
+      <span class="text-xs font-bold">📝 作業與列表</span>
+    </button>
+    <button onclick="switchTab(2, '字體設定與預覽')" id="navBtn2" class="flex flex-col items-center p-2 text-slate-400 w-1/3">
+      <span class="text-xs font-bold">📏 預覽與對照表</span>
+    </button>
+    <button onclick="switchTab(3, '機台高速連線')" id="navBtn3" class="flex flex-col items-center p-2 text-slate-400 w-1/3">
+      <span class="text-xs font-bold">🖨️ 連線機台</span>
+    </button>
+  </nav>
+
+  <!-- ==================== 彈跳視窗 Modal (建立站點出貨簽收單) ==================== -->
+  <div id="receiptModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[100] hidden flex items-center justify-center p-4">
+    <div class="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div class="bg-emerald-600 p-3.5 flex justify-between items-center">
+        <h3 class="text-white font-bold text-sm tracking-wide">🧾 列印【出貨單】</h3>
+        <button onclick="closeReceiptModal()" class="text-emerald-100 hover:text-white font-bold px-2">✕</button>
+      </div>
+      <div class="p-4 space-y-3 overflow-y-auto">
+        
+        <!-- 表單類型與日期控制 -->
+        <div class="bg-slate-900 rounded-xl p-3 border border-slate-700 flex flex-col gap-3">
+          <!-- 選擇出貨單類型 -->
+          <div class="flex gap-4 items-center bg-slate-800/50 p-2 rounded-lg border border-slate-600/50">
+             <label class="flex items-center gap-1.5 text-xs text-white cursor-pointer"><input type="radio" name="receiptType" value="preorder" checked onchange="updateModalReceiptPreview()" class="accent-emerald-500"> 預購出貨單</label>
+             <label class="flex items-center gap-1.5 text-xs text-amber-300 cursor-pointer"><input type="radio" name="receiptType" value="temp" onchange="updateModalReceiptPreview()" class="accent-emerald-500"> 臨時出貨單 (表格)</label>
+          </div>
+
+          <div class="flex justify-between items-start">
+            <div>
+              <p class="text-xs text-slate-400">配送站點：<span id="modalLoc" class="text-white font-bold"></span></p>
+              <p class="text-emerald-400 font-bold text-sm mt-0.5" id="modalTotals"></p>
+            </div>
+            <div class="text-right flex flex-col items-end gap-1.5">
+              <input type="date" id="modalDate" onchange="updateModalReceiptPreview()" class="bg-slate-800 border border-slate-600 rounded-lg px-2 py-1 text-xs text-white outline-none">
+              <label class="flex items-center gap-1.5 text-[11px] text-slate-300 cursor-pointer bg-slate-800 px-2 py-1 rounded border border-slate-700">
+                <input type="checkbox" id="blankDateCheckbox" onchange="updateModalReceiptPreview()" class="accent-amber-500"> 日期空白 (供手寫)
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 簽收單印前 1:1 實際 Canvas 預覽 -->
+        <div class="bg-slate-900 rounded-xl p-3 border border-slate-700 flex flex-col items-center overflow-x-auto">
+          <span class="text-[10px] text-slate-400 mb-1.5" id="modalDayStr">以下畫面即為實際送印的整張點陣圖：</span>
+          <canvas id="modalReceiptCanvas" width="384" height="300"></canvas>
+        </div>
+      </div>
+      <div class="p-3 border-t border-slate-700 flex gap-3 bg-slate-800">
+        <button onclick="closeReceiptModal()" class="flex-1 py-2.5 bg-slate-700 rounded-xl text-white text-xs font-bold">取消</button>
+        <button id="btnConfirmPrintReceipt" onclick="printStationReceiptRaster()" class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-white text-xs font-bold active:scale-95 shadow-lg">
+          🖨️ 整張大圖高速列印
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ========================================================
+    // 1. Firebase & Google Sheets 設定
+    // ========================================================
+    const firebaseConfig_xptre = {
+      apiKey: "AIzaSyB6D9vh6J2mdnjz2VXEVe99oi7oLF-irFo",
+      authDomain: "crm-ts-1225-001.firebaseapp.com",
+      databaseURL: "https://crm-ts-1225-001-default-rtdb.firebaseio.com",
+      projectId: "crm-ts-1225-001",
+      storageBucket: "crm-ts-1225-001.firebasestorage.app",
+      messagingSenderId: "925760221722",
+      appId: "1:925760221722:web:1aeda0b82f1f16b8dcd7a3"
+    };
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig_xptre, "App_xptre");
+    }
+    const db_xptre = firebase.app("App_xptre").database();
+
+    const GAS_WEB_APP_URL = ""; 
+
+    function syncToGoogleSheet_hsty_hd(order) {
+      if (!GAS_WEB_APP_URL) return;
+      fetch(GAS_WEB_APP_URL, {
+        method: "POST", mode: "no-cors",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sheetName: "hsty_hd", ...order })
+      }).catch(err => console.log(err));
+    }
+
+    // ========================================================
+    // 2. 站點管理、備註 Pill Group 與訂單隊列邏輯
+    // ========================================================
+    let orderQueue = [];
+    let currentReceiptLoc = '';
+
+    const savedCustomLocs = JSON.parse(localStorage.getItem('wuliaojian_custom_locs') || '[]');
+    // 加入三峽農會相關設定
+    let stationList = [...new Set([
+      '土農-本會直銷站', '土農-清水', '土農-金城路小舖', '土農-永豐', 
+      '三峽農會-本會', '三峽農會-碧萃', '三峽門市自取', '其他',
+      ...savedCustomLocs
+    ])];
+
+    function switchTab(tabNum, label) {
+      [1, 2, 3].forEach(n => {
+        document.getElementById(`tab-${n}`).classList.add('hidden');
+        document.getElementById(`navBtn${n}`).classList.replace('text-amber-500', 'text-slate-400');
+      });
+      document.getElementById(`tab-${tabNum}`).classList.remove('hidden');
+      document.getElementById(`navBtn${tabNum}`).classList.replace('text-slate-400', 'text-amber-500');
+      document.getElementById('currentTabLabel').innerText = label;
+
+      if (tabNum === 2) renderAllPreviews();
+    }
+
+    function addCustomStation() {
+      const input = document.getElementById('newStationInput');
+      const newLoc = input.value.trim();
+      if (!newLoc) return alert('請輸入要新增的站點名稱！');
+
+      if (!stationList.includes(newLoc)) {
+        stationList.unshift(newLoc); 
+        savedCustomLocs.push(newLoc);
+        localStorage.setItem('wuliaojian_custom_locs', JSON.stringify(savedCustomLocs));
+      }
+      input.value = '';
+      updateManualLocRadios(newLoc);
+      log(`已新增並切換至配送站點：${newLoc}`, 'success');
+    }
+
+    function updateManualLocRadios(forceSelectLoc = null) {
+      const container = document.getElementById('manualLocContainer');
+      if (!container) return;
+
+      let activeLocs = [...new Set([...stationList, ...orderQueue.map(o => o.loc)])];
+      const currentChecked = forceSelectLoc || document.querySelector('input[name="loc"]:checked')?.value || activeLocs[0];
+
+      let html = '';
+      activeLocs.forEach(loc => {
+        const isChecked = (loc === currentChecked) ? 'checked' : '';
+        html += `
+          <label class="cursor-pointer shrink-0">
+            <input type="radio" name="loc" value="${loc}" class="peer sr-only" ${isChecked}>
+            <div class="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-700 peer-checked:bg-amber-600 peer-checked:border-amber-400 peer-checked:text-white text-slate-400 text-xs font-bold transition-all">${loc}</div>
+          </label>
+        `;
+      });
+      container.innerHTML = html;
+    }
+
+    function selectNotePill(noteText, btnEl) {
+      document.getElementById('manualNote').value = noteText;
+      document.querySelectorAll('.note-pill').forEach(btn => {
+        btn.className = 'note-pill px-3 py-1 rounded-full text-xs font-bold transition-all text-slate-400 hover:text-white';
+      });
+      if (btnEl) {
+        btnEl.className = 'note-pill px-3 py-1 rounded-full text-xs font-bold transition-all bg-amber-600 text-white shadow';
+      }
+    }
+
+    function syncNotePillState() {
+      const val = document.getElementById('manualNote').value.trim();
+      const pills = document.querySelectorAll('.note-pill');
+      const map = ['', '阿順通知', '記事本團購', '每週預購'];
+      pills.forEach((btn, idx) => {
+        if (map[idx] === val) {
+          btn.className = 'note-pill px-3 py-1 rounded-full text-xs font-bold transition-all bg-amber-600 text-white shadow';
+        } else {
+          btn.className = 'note-pill px-3 py-1 rounded-full text-xs font-bold transition-all text-slate-400 hover:text-white';
+        }
+      });
+    }
+
+    function changeQty(type, amt) {
+      const el = document.getElementById(type === 'large' ? 'qtyLarge' : 'qtyMedium');
+      let val = parseInt(el.innerText, 10) + amt;
+      el.innerText = val < 0 ? 0 : val;
+    }
+    
+    // 快捷姓名設定
+    function setManualName(name) {
+      document.getElementById('manualName').value = name;
+      document.getElementById('quickNames').classList.add('hidden'); // 點選後自動收合
+    }
+
+    function addManualOrder() {
+      const loc = document.querySelector('input[name="loc"]:checked')?.value || "其他";
+      const name = document.getElementById('manualName').value.trim() || '未填姓名';
+      const note = document.getElementById('manualNote').value.trim() || '';
+      const dateStr = document.getElementById('manualDate').value || new Date().toISOString().split('T')[0];
+      const lQty = parseInt(document.getElementById('qtyLarge').innerText, 10);
+      const mQty = parseInt(document.getElementById('qtyMedium').innerText, 10);
+
+      if (lQty === 0 && mQty === 0) return alert('請至少指定 1 瓶（大瓶或中瓶）！');
+
+      const newOrder = { id: Date.now().toString(), loc, date: dateStr, name, lQty, mQty, note, selected: true };
+
+      orderQueue.push(newOrder);
+      db_xptre.ref('manual_orders_xptre/' + newOrder.id).set(newOrder);
+      syncToGoogleSheet_hsty_hd(newOrder);
+
+      document.getElementById('manualName').value = '';
+      selectNotePill('', document.querySelectorAll('.note-pill')[0]);
+      document.getElementById('qtyLarge').innerText = '0';
+      document.getElementById('qtyMedium').innerText = '0';
+
+      updateManualLocRadios(loc);
+      renderQueueList();
+      log(`已新增訂單：${loc} - ${name} (${lQty}大 ${mQty}中)`, 'success');
+    }
+
+    async function fetchGoogleSheetGOTx() {
+      const url = document.getElementById('sheetUrl').value;
+      const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+      if (!match) return alert('無效的 Google 試算表網址');
+      
+      const gvizUrl = `https://docs.google.com/spreadsheets/d/${match[1]}/gviz/tq?tqx=out:csv&sheet=GOTx`;
+      log('正在從雲端匯入 GOTx 工作表...');
+      try {
+        const res = await fetch(gvizUrl);
+        const rows = (await res.text()).split('\n').map(r => r.split(',').map(c => c.replace(/(^"|"$)/g, '').trim()));
+        let count = 0;
+        for (let i = 1; i < rows.length; i++) {
+          const r = rows[i];
+          if (r.length < 3 || !r[2]) continue;
+          orderQueue.push({
+            id: Date.now().toString() + '_' + i,
+            loc: r[0] || '未定',
+            date: r[1] || new Date().toISOString().split('T')[0],
+            name: r[2],
+            lQty: parseInt(r[3], 10) || 0,
+            mQty: parseInt(r[4], 10) || 0,
+            note: r[5] || '',
+            selected: true
+          });
+          count++;
+        }
+        updateManualLocRadios();
+        renderQueueList();
+        log(`✅ GOTx 匯入成功，共 ${count} 筆資料`, 'success');
+        alert(`成功匯入 ${count} 筆訂單！`);
+      } catch (e) {
+        log(`匯入失敗: ${e.message}`, 'error');
+        alert(`匯入失敗: ${e.message}`);
+      }
+    }
+
+    function renderQueueList() {
+      const listEl = document.getElementById('queueListGrouped');
+      if (orderQueue.length === 0) {
+        listEl.innerHTML = '<div class="text-center text-slate-500 text-xs py-8">目前無資料，請匯入 GOTx 或手動輸入</div>';
+        return;
+      }
+
+      const grouped = orderQueue.reduce((acc, order) => {
+        if (!acc[order.loc]) acc[order.loc] = [];
+        acc[order.loc].push(order);
+        return acc;
+      }, {});
+
+      let html = '';
+      for (const [loc, orders] of Object.entries(grouped)) {
+        let sumL = 0, sumM = 0, selCount = 0;
+        orders.forEach(o => {
+          if (o.selected) { sumL += o.lQty; sumM += o.mQty; selCount++; }
+        });
+        const allSel = selCount === orders.length;
+
+        html += `
+          <div class="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden">
+            <div class="bg-slate-700/80 px-3.5 py-2.5 flex flex-col gap-2">
+              <div class="flex justify-between items-center">
+                <span class="text-sm font-bold text-white">${loc}</span>
+                <label class="flex items-center gap-1.5 cursor-pointer">
+                  <input type="checkbox" onchange="toggleGroupSelection('${loc}', this.checked)" ${allSel ? 'checked' : ''} class="w-4 h-4 accent-amber-500">
+                  <span class="text-xs text-slate-300">全選本站 (${orders.length})</span>
+                </label>
+              </div>
+              <div class="flex justify-between items-center border-t border-slate-600/60 pt-2">
+                <div class="text-xs text-amber-400 font-bold">
+                  已選 ${selCount} 筆 ｜ 總計: ${sumL}大瓶 + ${sumM}中瓶
+                </div>
+                <div class="flex gap-2">
+                  <button onclick="printGroupLabelsRaster('${loc}')" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 rounded-lg text-xs text-white font-bold active:scale-95 shadow">
+                    🏷️ 印便貼 (${selCount}張)
+                  </button>
+                  <button onclick="openReceiptModal('${loc}')" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-xs text-white font-bold active:scale-95 shadow">
+                    🧾 列印出貨單
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="p-2.5 space-y-2">`;
+
+        orders.forEach(order => {
+          const qtyStr = [order.lQty > 0 ? `${order.lQty} 大瓶` : '', order.mQty > 0 ? `${order.mQty} 中瓶` : ''].filter(Boolean).join(' , ') || '0 瓶';
+          const noteBadge = order.note ? `<span class="inline-block ml-2 px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[11px] font-bold">【${order.note}】</span>` : '';
+          
+          html += `
+            <div class="flex items-center justify-between p-2.5 bg-slate-800/70 rounded-xl border border-slate-700/80 hover:border-slate-600">
+              <label class="flex items-center gap-3 flex-1 cursor-pointer">
+                <input type="checkbox" onchange="toggleSingleOrder('${order.id}', this.checked)" ${order.selected ? 'checked' : ''} class="w-4 h-4 accent-amber-500">
+                <div>
+                  <div class="text-sm text-white font-bold flex items-center">
+                    <span>${order.name}</span>
+                    ${noteBadge}
+                  </div>
+                  <div class="text-xs text-emerald-400 font-semibold mt-0.5">${qtyStr} <span class="text-slate-500 font-normal ml-2">${order.date}</span></div>
+                </div>
+              </label>
+              <div class="flex items-center gap-1.5">
+                <button onclick="printSingleStickerRaster('${order.id}')" class="px-2 py-1 bg-slate-700 hover:bg-amber-600 text-white rounded text-[11px] font-bold" title="單張補印">單印</button>
+                <button onclick="removeSingleOrder('${order.id}')" class="px-2 py-1 text-rose-400 hover:bg-rose-500/20 rounded text-[11px]">刪除</button>
+              </div>
+            </div>`;
+        });
+        html += `</div></div>`;
+      }
+      listEl.innerHTML = html;
+    }
+
+    function toggleGroupSelection(loc, isChecked) { orderQueue.forEach(o => { if (o.loc === loc) o.selected = isChecked; }); renderQueueList(); }
+    function toggleSingleOrder(id, isChecked) { const target = orderQueue.find(o => o.id === id); if (target) target.selected = isChecked; renderQueueList(); }
+    function removeSingleOrder(id) { orderQueue = orderQueue.filter(o => o.id !== id); renderQueueList(); }
+    function clearQueue() { if (confirm('確定要清空目前清單中的所有名單嗎？')) { orderQueue = []; renderQueueList(); } }
+
+    // ========================================================
+    // 3. 單一繪圖核心
+    // ========================================================
+    function getGlobalPrintStyle() {
+      // 若元素在隱藏的Div中，為防止取不到值，提供防呆回退值
+      const getValue = (id, def) => document.getElementById(id) ? parseInt(document.getElementById(id).value, 10) : def;
+      const getCheck = (id, def) => document.getElementById(id) ? document.getElementById(id).checked : def;
+      
+      return {
+        fontFamily: document.getElementById('globalFontFamily').value,
+        threshold: getValue('globalThreshold', 185),
+        sPx1: getValue('sPx1', 24), sBold1: getCheck('sBold1', true),
+        sPx2: getValue('sPx2', 52), sBold2: getCheck('sBold2', true),
+        sPx3: getValue('sPx3', 34), sBold3: getCheck('sBold3', true),
+        sPx4: getValue('sPx4', 26), sBold4: getCheck('sBold4', true),
+        rPxTitle: getValue('rPxTitle', 26), rBoldTitle: getCheck('rBoldTitle', true),
+        rPxTotal: getValue('rPxTotal', 54),
+        rPxItem: getValue('rPxItem', 24),
+        rSpecX: getValue('rSpecX', 155),
+        tempRowH: getValue('tempRowH', 60)
+      };
+    }
+
+    function binarizeCanvas1Bit(canvas, threshold) {
+      const ctx = canvas.getContext('2d');
+      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const d = imgData.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+        const v = (d[i + 3] > 128 && lum < threshold) ? 0 : 255;
+        d[i] = d[i + 1] = d[i + 2] = v;
+        d[i + 3] = 255;
+      }
+      ctx.putImageData(imgData, 0, 0);
+      return canvas;
+    }
+
+    function renderStickerToCanvas(targetCanvas, order) {
+      const st = getGlobalPrintStyle();
+      const width = 384;
+      const hasNote = Boolean(order.note && order.note.trim() !== '');
+      let totalHeight = 16 + st.sPx1 + 12 + st.sPx2 + 12 + st.sPx3 + 16;
+      if (hasNote) totalHeight += st.sPx4 + 12;
+
+      targetCanvas.width = width;
+      targetCanvas.height = totalHeight;
+      const ctx = targetCanvas.getContext('2d');
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, width, totalHeight);
+      ctx.fillStyle = '#000000';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+
+      let y = 12;
+      ctx.font = `${st.sBold1 ? 'bold' : 'normal'} ${st.sPx1}px ${st.fontFamily}`;
+      ctx.fillText(`${order.loc} ${order.date}`, width / 2, y);
+      y += st.sPx1 + 12;
+
+      ctx.font = `${st.sBold2 ? 'bold' : 'normal'} ${st.sPx2}px ${st.fontFamily}`;
+      ctx.fillText(order.name, width / 2, y);
+      y += st.sPx2 + 12;
+
+      const qtyStr = [order.lQty > 0 ? `${order.lQty} 大瓶` : '', order.mQty > 0 ? `${order.mQty} 中瓶` : ''].filter(Boolean).join(' , ') || '0 瓶';
+      ctx.font = `${st.sBold3 ? 'bold' : 'normal'} ${st.sPx3}px ${st.fontFamily}`;
+      ctx.fillText(qtyStr, width / 2, y);
+      y += st.sPx3 + 12;
+
+      if (hasNote) {
+        ctx.font = `${st.sBold4 ? 'bold' : 'normal'} ${st.sPx4}px ${st.fontFamily}`;
+        ctx.fillText(`【 ${order.note.trim()} 】`, width / 2, y);
+      }
+      return binarizeCanvas1Bit(targetCanvas, st.threshold);
+    }
+
+    // [繪圖引擎 B] 繪製預購出貨簽收單 
+    function renderStationReceiptToCanvas(targetCanvas, locName, fullDateStr, orders) {
+      const st = getGlobalPrintStyle();
+      const width = 384;
+
+      let sumL = 0, sumM = 0;
+      orders.forEach(o => { sumL += o.lQty; sumM += o.mQty; });
+
+      const itemRowHeight = st.rPxItem + 12;
+      const totalLinesCount = (sumL > 0 ? 1 : 0) + (sumM > 0 ? 1 : 0) || 1;
+
+      const calcHeight = 16
+        + (st.rPxTitle + 16)
+        + 32 + 32 + 30
+        + (totalLinesCount * (st.rPxTotal + 10))
+        + 20
+        + 36
+        + (orders.length * itemRowHeight)
+        + 24
+        + 130; 
+
+      targetCanvas.width = width;
+      targetCanvas.height = calcHeight;
+      const ctx = targetCanvas.getContext('2d');
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, width, calcHeight);
+      ctx.fillStyle = '#000000';
+      ctx.textBaseline = 'top';
+
+      let y = 14;
+
+      ctx.textAlign = 'center';
+      ctx.font = `${st.rBoldTitle ? 'bold' : 'normal'} ${st.rPxTitle}px ${st.fontFamily}`;
+      ctx.fillText('五寮尖山羊乳 出貨簽收單', width / 2, y);
+      y += st.rPxTitle + 16;
+
+      ctx.textAlign = 'left';
+      ctx.font = `bold 22px ${st.fontFamily}`;
+      ctx.fillText(`站點：${locName}`, 6, y);
+      y += 32;
+      ctx.fillText(`出貨日期：${fullDateStr}`, 6, y);
+      y += 32;
+      ctx.fillText('共計：', 6, y);
+      y += 30;
+
+      // 變更為 {品項} : {數量} 以便視覺分辨
+      ctx.font = `bold ${st.rPxTotal}px ${st.fontFamily}`;
+      if (sumL > 0) {
+        ctx.fillText(`大羊奶 : ${sumL}`, 12, y);
+        y += st.rPxTotal + 10;
+      }
+      if (sumM > 0) {
+        ctx.fillText(`中羊奶 : ${sumM}`, 12, y);
+        y += st.rPxTotal + 10;
+      }
+      if (sumL === 0 && sumM === 0) {
+        ctx.fillText(`總計 : 0 瓶`, 12, y);
+        y += st.rPxTotal + 10;
+      }
+
+      y += 4;
+      ctx.fillRect(0, y, width, 2);
+      y += 10;
+
+      ctx.font = `bold ${st.rPxItem}px ${st.fontFamily}`;
+      ctx.fillText('客戶姓名', 6, y);
+      ctx.fillText('規格 / 備註', st.rSpecX, y);
+      y += st.rPxItem + 10;
+
+      ctx.fillRect(0, y - 4, width, 1);
+
+      ctx.font = `bold ${st.rPxItem}px ${st.fontFamily}`;
+      for (const o of orders) {
+        const q = [o.lQty > 0 ? `${o.lQty}大` : '', o.mQty > 0 ? `${o.mQty}中` : ''].filter(Boolean).join(',');
+        const noteStr = o.note ? ` (${o.note})` : '';
+        ctx.fillText(o.name, 6, y);
+        ctx.fillText(`${q}${noteStr}`, st.rSpecX, y);
+        y += itemRowHeight;
+      }
+
+      y += 4;
+      ctx.fillRect(0, y, width, 2);
+      y += 14;
+
+      ctx.font = `bold 26px ${st.fontFamily}`;
+      ctx.fillText('點收人(簽章)：', 6, y);
+
+      return binarizeCanvas1Bit(targetCanvas, st.threshold);
+    }
+
+    // [繪圖引擎 B-2] 繪製臨時出貨單表格 Canvas
+    function renderTemporaryReceiptToCanvas(targetCanvas, locName, fullDateStr, rowHeight = 60) {
+      const st = getGlobalPrintStyle();
+      const width = 384;
+      const headerHeight = 40;
+      const items = ["大羊奶", "中羊奶", "小饅頭\n-黑糖", "小饅頭\n-原味", "大饅頭-\n桂圓核桃"];
+      
+      const calcHeight = 20 + 36 + 20 + headerHeight + (items.length * rowHeight) + 120;
+      targetCanvas.width = width;
+      targetCanvas.height = calcHeight;
+      const ctx = targetCanvas.getContext('2d');
+      
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, width, calcHeight);
+      ctx.fillStyle = '#000000';
+      
+      let y = 20;
+
+      // 日期置頂居中
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.font = `bold 24px ${st.fontFamily}`;
+      ctx.fillText(fullDateStr, width / 2, y);
+      y += 36;
+      
+      // 標註站點與說明
+      ctx.textAlign = 'left';
+      ctx.font = `bold 20px ${st.fontFamily}`;
+      ctx.fillText(`站點：${locName}`, 8, y);
+      y += 30;
+
+      // 繪製表格
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#000000';
+      
+      const startX = 4;
+      const endX = width - 4;
+      const tableW = endX - startX;
+      // 欄位分割線：依序為 品項, 進貨, 退貨, 盤點
+      const colW = [110, 86, 86, 98]; 
+      const colX = [startX];
+      let currentX = startX;
+      for (let cw of colW) { currentX += cw; colX.push(currentX); }
+      // 確保最後一條貼齊右側
+      colX[colX.length - 1] = endX;
+
+      // 畫表頭框
+      ctx.strokeRect(startX, y, tableW, headerHeight);
+      // 畫表頭垂直線
+      for (let i = 1; i < colX.length - 1; i++) {
+         ctx.beginPath(); ctx.moveTo(colX[i], y); ctx.lineTo(colX[i], y + headerHeight); ctx.stroke();
+      }
+
+      // 表頭文字 (置中)
+      ctx.font = `bold 22px ${st.fontFamily}`;
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'center';
+      const headers = ["品項", "進貨", "退貨", "盤點"];
+      for(let i=0; i<4; i++) {
+         let cx = (colX[i] + colX[i+1]) / 2;
+         ctx.fillText(headers[i], cx, y + headerHeight/2 + 2);
+      }
+      y += headerHeight;
+
+      // 畫商品明細 Rows
+      for (let r=0; r<items.length; r++) {
+         ctx.strokeRect(startX, y, tableW, rowHeight);
+         for (let i = 1; i < colX.length - 1; i++) {
+             ctx.beginPath(); ctx.moveTo(colX[i], y); ctx.lineTo(colX[i], y + rowHeight); ctx.stroke();
+         }
+         
+         let text = items[r];
+         ctx.textAlign = 'right';
+         ctx.textBaseline = 'middle';
+         ctx.font = `bold 22px ${st.fontFamily}`;
+         let rightX = colX[1] - 8;
+         let midY = y + rowHeight/2;
+         
+         // 判斷是否斷行顯示 (針對大於3字元)
+         if (text.includes("小饅頭")) {
+             ctx.fillText("小饅頭", rightX, midY - 14);
+             ctx.fillText(text.replace("小饅頭\n", "").trim(), rightX, midY + 14);
+         } else if (text.includes("大饅頭")) {
+             ctx.fillText("大饅頭-", rightX, midY - 14);
+             ctx.fillText(text.replace("大饅頭-\n", "").trim(), rightX, midY + 14);
+         } else if (text.length > 3) {
+             ctx.fillText(text.substring(0, 3), rightX, midY - 14);
+             ctx.fillText(text.substring(3), rightX, midY + 14);
+         } else {
+             ctx.fillText(text, rightX, midY + 2);
+         }
+         y += rowHeight;
+      }
+      
+      y += 30;
+      ctx.textAlign = 'left';
+      ctx.font = `bold 26px ${st.fontFamily}`;
+      ctx.fillText('現場點收人：', 8, y);
+
+      return binarizeCanvas1Bit(targetCanvas, st.threshold);
+    }
+
+    // [繪圖引擎 C] 空白試驗對照表
+    function renderCalibrationSheetToCanvas(targetCanvas) {
+      const st = getGlobalPrintStyle();
+      const width = 384;
+      const height = 590;
+      targetCanvas.width = width;
+      targetCanvas.height = height;
+      const ctx = targetCanvas.getContext('2d');
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, width, height);
+      ctx.fillStyle = '#000000';
+      ctx.textBaseline = 'top';
+
+      ctx.fillRect(0, 0, width, 2);
+      for (let x = 0; x <= width; x += 16) { 
+        const is10mm = (x % 80 === 0);       
+        const is5mm = (x % 40 === 0);        
+        const tickH = is10mm ? 18 : (is5mm ? 12 : 6);
+        ctx.fillRect(x === 384 ? 383 : x, 0, 2, tickH);
+
+        if (is10mm && x < 380) {
+          ctx.font = `bold 12px ${st.fontFamily}`;
+          ctx.textAlign = 'left';
+          ctx.fillText(`${x}px`, x + 2, 18);
+        }
+      }
+      ctx.font = `bold 12px ${st.fontFamily}`;
+      ctx.textAlign = 'right';
+      ctx.fillText('384px(48mm)', 382, 18);
+
+      let y = 38;
+      ctx.fillRect(0, y, width, 2);
+      y += 8;
+
+      ctx.textAlign = 'center';
+      ctx.font = `bold 22px ${st.fontFamily}`;
+      ctx.fillText('【空白試驗：字體與比例尺對照表】', width / 2, y);
+      y += 30;
+
+      ctx.font = `bold 14px ${st.fontFamily}`;
+      ctx.fillText('▼ X軸常用對齊座標：80px / 155px / 240px ▼', width / 2, y);
+      y += 20;
+      [80, 155, 240].forEach(anchorX => {
+        ctx.fillRect(anchorX, y, 2, 12);
+        ctx.textAlign = 'left';
+        ctx.fillText(`${anchorX}px`, anchorX + 4, y - 2);
+      });
+      y += 18;
+      ctx.fillRect(0, y, width, 2);
+      y += 10;
+
+      const ladder = [
+        { px: 16, text: '16px: 五寮尖山羊乳 0123456789' },
+        { px: 20, text: '20px: 五寮尖山羊乳 王大明 2大1中' },
+        { px: 24, text: '24px: 土農-本會 2026-10-14' },
+        { px: 28, text: '28px(原LV1): 王大明 2大瓶' },
+        { px: 34, text: '34px: 2 大瓶 , 1 中瓶' },
+        { px: 44, text: '44px: 王大明 【預購】' },
+        { px: 54, text: '54px(LV2): 大羊奶 : 12' },
+        { px: 68, text: '68px(LV3): 大瓶 8' }
+      ];
+
+      ctx.textAlign = 'left';
+      for (const item of ladder) {
+        ctx.font = `bold ${item.px}px ${st.fontFamily}`;
+        ctx.fillText(item.text, 4, y);
+        y += item.px + 10;
+      }
+
+      y += 4;
+      ctx.font = `bold 16px ${st.fontFamily}`;
+      ctx.fillText('線條粗細: 上1px / 中2px / 下4px', 4, y);
+      y += 22;
+      ctx.fillRect(0, y, width, 1);
+      y += 8;
+      ctx.fillRect(0, y, width, 2);
+      y += 8;
+      ctx.fillRect(0, y, width, 4);
+
+      return binarizeCanvas1Bit(targetCanvas, st.threshold);
+    }
+
+    function renderAllPreviews() {
+      // 1. 便貼
+      const sampleOrder = { loc: '三峽農會-本會', date: '2026-10-24', name: '王大明', lQty: 2, mQty: 1, note: document.getElementById('manualNote').value.trim() || '阿順通知' };
+      renderStickerToCanvas(document.getElementById('previewCanvasSticker'), sampleOrder);
+
+      // 2. 預購簽收單
+      const sampleReceiptOrders = [
+        { name: '王大明', lQty: 2, mQty: 1, note: '阿順通知' },
+        { name: '陳小華', lQty: 1, mQty: 0, note: '每週預購' },
+        { name: '林班長', lQty: 0, mQty: 3, note: '' }
+      ];
+      renderStationReceiptToCanvas(document.getElementById('previewCanvasReceipt'), '三峽農會-本會', '2026-10-24 (星期六)', sampleReceiptOrders);
+
+      // 3. 臨時出貨單 (表格)
+      const tH = getGlobalPrintStyle().tempRowH;
+      renderTemporaryReceiptToCanvas(document.getElementById('previewCanvasTempReceipt'), '三峽農會-碧翠', '115 年         月           日 (         )', tH);
+
+      // 4. 對照表
+      renderCalibrationSheetToCanvas(document.getElementById('previewCanvasCalibration'));
+    }
+
+    // ========================================================
+    // 4. 通訊核心
+    // ========================================================
+    let connMode = null; 
+    let bluetoothDevice = null;
+    let printerCharacteristic = null;
+    let usbDevice = null;
+    let usbEndpointOut = 1;
+    let bleChunkSize = 120; 
+
+    function log(msg, type = 'info') {
+      const consoleEl = document.getElementById('logConsole');
+      const time = new Date().toLocaleTimeString('zh-TW', { hour12: false });
+      const color = type === 'error' ? 'text-rose-400' : (type === 'success' ? 'text-emerald-400' : 'text-sky-300');
+      consoleEl.innerHTML = `<div class="${color}">[${time}] ${msg}</div>` + consoleEl.innerHTML;
+    }
+
+    async function connectPrinter(mode) {
+      if (!navigator.bluetooth) return alert('請使用支援藍牙之瀏覽器開啟！');
+      try {
+        const servicesList = [ '000018f0-0000-1000-8000-00805f9b34fb', 'e7810a71-73ae-499d-8c15-faa9aef0c3f2', '49535343-fe7d-4ae5-8fa9-9fafd205e455' ];
+        let opt = { optionalServices: servicesList };
+        if (mode === 'Quick') opt.filters = [{ namePrefix: 'Printer' }, { namePrefix: 'XP' }];
+        else opt.acceptAllDevices = true;
+
+        log('正在搜尋藍牙印表機...');
+        bluetoothDevice = await navigator.bluetooth.requestDevice(opt);
+        bluetoothDevice.addEventListener('gattserverdisconnected', () => {
+          connMode = null; printerCharacteristic = null;
+          document.getElementById('connStatus').innerHTML = '<span class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30">已斷線</span>';
+          log('⚠️ 藍牙印表機已斷線', 'error');
+        });
+
+        const server = await bluetoothDevice.gatt.connect();
+        const services = await server.getPrimaryServices();
+        for (const s of services) {
+          const chars = await s.getCharacteristics();
+          for (const c of chars) {
+            if (c.properties.write || c.properties.writeWithoutResponse) {
+              printerCharacteristic = c;
+              if (c.properties.write) break; 
+            }
+          }
+          if (printerCharacteristic && printerCharacteristic.properties.write) break;
+        }
+
+        if (!printerCharacteristic) throw new Error('找不到可寫入的藍牙特徵值');
+        connMode = 'ble';
+        document.getElementById('connStatus').innerHTML = `<span class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">🔹 藍牙已連線 (${bluetoothDevice.name || 'XP-Q90EC'})</span>`;
+        log(`✅ 藍牙連線成功！(${bluetoothDevice.name || 'XP-Q90EC'})`, 'success');
+      } catch (e) {
+        log(`藍牙連線失敗: ${e.message}`, 'error');
+      }
+    }
+
+    async function connectUSB() {
+      if (!navigator.usb) return alert('此瀏覽器不支援 WebUSB');
+      try {
+        const device = await navigator.usb.requestDevice({ filters: [] });
+        await device.open();
+        if (!device.configuration) await device.selectConfiguration(1);
+        const iface = device.configuration.interfaces[0];
+        await device.claimInterface(iface.interfaceNumber);
+        const ep = iface.alternate.endpoints.find(e => e.direction === 'out');
+        if (!ep) throw new Error('找不到 USB 輸出端點');
+
+        usbDevice = device;
+        usbEndpointOut = ep.endpointNumber;
+        connMode = 'usb';
+        document.getElementById('connStatus').innerHTML = `<span class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">🔌 USB 已連線</span>`;
+        log('✅ USB 直連成功！', 'success');
+      } catch (e) {
+        log(`USB 連線失敗: ${e.message}`, 'error');
+      }
+    }
+
+    function disconnectPrinter() {
+      if (bluetoothDevice && bluetoothDevice.gatt.connected) bluetoothDevice.gatt.disconnect();
+      connMode = null;
+    }
+
+    function compileCanvasToSingleGSv0Packet(canvas) {
+      const width = canvas.width;  
+      const height = canvas.height; 
+      const bytesPerRow = width / 8; 
+      const imgData = canvas.getContext('2d').getImageData(0, 0, width, height).data;
+
+      const rasterLength = bytesPerRow * height;
+      const packet = new Uint8Array(2 + 8 + rasterLength + 8);
+      let offset = 0;
+
+      packet[offset++] = 0x1B; packet[offset++] = 0x40;
+      packet[offset++] = 0x1D; packet[offset++] = 0x76; packet[offset++] = 0x30; packet[offset++] = 0x00;
+      packet[offset++] = bytesPerRow & 0xFF;        
+      packet[offset++] = (bytesPerRow >> 8) & 0xFF; 
+      packet[offset++] = height & 0xFF;             
+      packet[offset++] = (height >> 8) & 0xFF;      
+
+      for (let y = 0; y < height; y++) {
+        for (let bx = 0; bx < bytesPerRow; bx++) {
+          let byte = 0;
+          for (let bit = 0; bit < 8; bit++) {
+            const x = bx * 8 + bit;
+            const idx = (y * width + x) * 4;
+            if (imgData[idx] < 128) byte |= (1 << (7 - bit));
+          }
+          packet[offset++] = byte;
+        }
+      }
+
+      packet[offset++] = 0x0A; packet[offset++] = 0x0A; packet[offset++] = 0x0A; packet[offset++] = 0x0A;
+      packet[offset++] = 0x1D; packet[offset++] = 0x56; packet[offset++] = 0x42; packet[offset++] = 0x00;
+
+      return packet;
+    }
+
+    async function sendPacketFast(packetBuffer) {
+      if (!connMode) {
+        alert('請先切換至「🖨️ 連線機台」分頁連接印表機！');
+        switchTab(3, '機台高速連線');
+        return false;
+      }
+
+      const progressEl = document.getElementById('txProgressText');
+      try {
+        if (connMode === 'usb' && usbDevice) {
+          await usbDevice.transferOut(usbEndpointOut, packetBuffer);
+          progressEl.innerText = '100% 完成';
+          return true;
+        }
+
+        if (connMode === 'ble' && printerCharacteristic) {
+          const total = packetBuffer.length;
+          for (let i = 0; i < total; i += bleChunkSize) {
+            const chunk = packetBuffer.slice(i, i + bleChunkSize);
+            if (printerCharacteristic.properties.write) {
+              if (printerCharacteristic.writeValueWithResponse) {
+                await printerCharacteristic.writeValueWithResponse(chunk);
+              } else {
+                await printerCharacteristic.writeValue(chunk);
+              }
+            } else {
+              await printerCharacteristic.writeValueWithoutResponse(chunk);
+              await new Promise(r => setTimeout(r, 5));
+            }
+            if (i % (bleChunkSize * 8) === 0) progressEl.innerText = `傳輸中 ${Math.round((i / total) * 100)}%`;
+          }
+          progressEl.innerText = '100% 完成';
+          return true;
+        }
+      } catch (e) {
+        progressEl.innerText = '傳輸錯誤';
+        log(`傳輸失敗: ${e.message}`, 'error');
+        return false;
+      }
+    }
+
+    // ========================================================
+    // 5. 各項列印觸發動作
+    // ========================================================
+    async function testPrintCurrentCanvas(canvasId, titleName) {
+      renderAllPreviews();
+      const canvas = document.getElementById(canvasId);
+      const packet = compileCanvasToSingleGSv0Packet(canvas);
+      log(`開始列印【${titleName}】(${canvas.width}x${canvas.height}px, ${packet.length} bytes)...`);
+      if (await sendPacketFast(packet)) {
+        log(`✅【${titleName}】列印完成！`, 'success');
+      }
+    }
+
+    async function printSingleStickerRaster(orderId) {
+      const order = orderQueue.find(o => o.id === orderId);
+      if (!order) return;
+      const offscreen = document.createElement('canvas');
+      renderStickerToCanvas(offscreen, order);
+      const packet = compileCanvasToSingleGSv0Packet(offscreen);
+      log(`單張列印便貼：${order.name}...`);
+      await sendPacketFast(packet);
+    }
+
+    async function printGroupLabelsRaster(loc) {
+      const toPrint = orderQueue.filter(o => o.loc === loc && o.selected);
+      if (toPrint.length === 0) return alert('該站點目前沒有勾選任何客戶！');
+
+      log(`開始批次印製【${loc}】便貼，共 ${toPrint.length} 張...`);
+      const offscreen = document.createElement('canvas');
+
+      for (let i = 0; i < toPrint.length; i++) {
+        const order = toPrint[i];
+        renderStickerToCanvas(offscreen, order);
+        const packet = compileCanvasToSingleGSv0Packet(offscreen);
+        log(`正在印製 (${i + 1}/${toPrint.length})：${order.name}`);
+        const ok = await sendPacketFast(packet);
+        if (!ok) break;
+        await new Promise(r => setTimeout(r, 180));
+      }
+      log(`✅【${loc}】共 ${toPrint.length} 張便貼全部列印完成！`, 'success');
+    }
+
+    function openReceiptModal(loc) {
+      currentReceiptLoc = loc;
+      const toPrint = orderQueue.filter(o => o.loc === loc && o.selected);
+      
+      let sumL = 0, sumM = 0;
+      toPrint.forEach(o => { sumL += o.lQty; sumM += o.mQty; });
+
+      document.getElementById('modalLoc').innerText = loc;
+      document.getElementById('modalTotals').innerText = `共 ${toPrint.length} 筆 ｜ 大瓶 ${sumL} ＋ 中瓶 ${sumM}`;
+
+      const tmrw = new Date();
+      tmrw.setDate(tmrw.getDate() + 1);
+      document.getElementById('modalDate').value = tmrw.toISOString().split('T')[0];
+
+      // 重置打勾狀態為不勾選(預設印出日期)
+      document.getElementById('blankDateCheckbox').checked = false;
+      document.querySelector('input[name="receiptType"][value="preorder"]').checked = true;
+
+      updateModalReceiptPreview();
+      document.getElementById('receiptModal').classList.remove('hidden');
+    }
+
+    function closeReceiptModal() {
+      document.getElementById('receiptModal').classList.add('hidden');
+    }
+
+    function updateModalReceiptPreview() {
+      const type = document.querySelector('input[name="receiptType"]:checked').value;
+      const isBlankDate = document.getElementById('blankDateCheckbox').checked;
+      const dateVal = document.getElementById('modalDate').value;
+      const days = ['日', '一', '二', '三', '四', '五', '六'];
+      
+      let fullDateStr = '';
+      if (isBlankDate) {
+        fullDateStr = '115 年         月           日 (         )';
+      } else {
+        const dayStr = dateVal ? `(星期${days[new Date(dateVal).getDay()]})` : '';
+        fullDateStr = `${dateVal} ${dayStr}`;
+      }
+
+      const toPrint = orderQueue.filter(o => o.loc === currentReceiptLoc && o.selected);
+      const modalCanvas = document.getElementById('modalReceiptCanvas');
+      
+      if (type === 'preorder') {
+        renderStationReceiptToCanvas(modalCanvas, currentReceiptLoc, fullDateStr, toPrint);
+      } else {
+        const tH = getGlobalPrintStyle().tempRowH;
+        renderTemporaryReceiptToCanvas(modalCanvas, currentReceiptLoc, fullDateStr, tH);
+      }
+    }
+
+    async function printStationReceiptRaster() {
+      const btn = document.getElementById('btnConfirmPrintReceipt');
+      try {
+        btn.disabled = true;
+        updateModalReceiptPreview();
+        const modalCanvas = document.getElementById('modalReceiptCanvas');
+        const packet = compileCanvasToSingleGSv0Packet(modalCanvas);
+
+        log(`印製站點出貨單：${currentReceiptLoc} (高度 ${modalCanvas.height}px, ${packet.length} bytes)...`);
+        if (await sendPacketFast(packet)) {
+          log(`✅【${currentReceiptLoc}】出貨單列印完成！`, 'success');
+          closeReceiptModal();
+        }
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // ========================================================
+    // 頁面初始化
+    // ========================================================
+    window.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('manualDate').value = new Date().toISOString().split('T')[0];
+      updateManualLocRadios();
+      renderAllPreviews();
+    });
+  </script>
+</body>
+</html>
